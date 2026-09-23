@@ -28,14 +28,19 @@ export const App: React.FC = () => {
   const [centerlineOptions, setCenterlineOptions] = useState<CenterlineOptions>({
     threshold: 135,
     autoThreshold: false,
+    adaptiveLighting: true,
+    adaptiveSensitivity: 15,
     invert: false,
-    lineWidth: 2.5,
+    lineWidth: 3.5,
     strokeColor: '#0f172a',
     fillBackground: 'none',
     lineCap: 'round',
     lineJoin: 'round',
-    smoothing: 1.5,
-    minPathLength: 3,
+    connectGaps: true,
+    gapMaxDistance: 25,
+    autoCloseLoops: true,
+    humanErrorSmoothing: 5.0,
+    minPathLength: 10,
   });
 
   const [outlineOptions, setOutlineOptions] = useState<OutlineOptions>({
@@ -48,12 +53,10 @@ export const App: React.FC = () => {
     minArea: 6,
   });
 
-  // Cached canvas & image data
   const hiddenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const originalImageDataRef = useRef<ImageData | null>(null);
   const debounceTimerRef = useRef<number | null>(null);
 
-  // Load sample presets on mount
   useEffect(() => {
     setSampleImages(generateSampleImages());
   }, []);
@@ -64,7 +67,6 @@ export const App: React.FC = () => {
 
     setIsProcessing(true);
 
-    // Run in requestAnimationFrame / setTimeout so UI remains responsive
     setTimeout(() => {
       try {
         const imgData = originalImageDataRef.current;
@@ -100,8 +102,8 @@ export const App: React.FC = () => {
       let width = img.width;
       let height = img.height;
 
-      // Restrict max dimension to 1000px for instant real-time responsiveness
-      const MAX_DIM = 1000;
+      // Keep max dimension to 1200px for optimal speed & quality
+      const MAX_DIM = 1200;
       if (width > MAX_DIM || height > MAX_DIM) {
         if (width > height) {
           height = Math.round((height * MAX_DIM) / width);
@@ -124,7 +126,6 @@ export const App: React.FC = () => {
         originalImageDataRef.current = imgData;
         hiddenCanvasRef.current = canvas;
 
-        // Auto-detect optimal threshold for this image
         const gray = new Uint8Array(width * height);
         for (let i = 0; i < width * height; i++) {
           const idx = i * 4;
@@ -146,7 +147,7 @@ export const App: React.FC = () => {
 
     debounceTimerRef.current = window.setTimeout(() => {
       runVectorization();
-    }, 60);
+    }, 50);
 
     return () => {
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
@@ -179,7 +180,7 @@ export const App: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${fileName}-same-size-line.svg`;
+    link.download = `${fileName}-smooth-vector.svg`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

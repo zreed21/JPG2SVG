@@ -11,6 +11,9 @@ import {
   Palette,
   Minus,
   Check,
+  Link,
+  SunMedium,
+  Trash2,
 } from 'lucide-react';
 import { CenterlineOptions, TraceResult } from '../utils/centerlineTracer';
 import { OutlineOptions } from '../utils/outlineTracer';
@@ -35,6 +38,12 @@ const PRESET_WIDTHS = [
   { label: 'Medium', value: 4.0 },
   { label: 'Marker', value: 7.0 },
   { label: 'Bold', value: 12.0 },
+];
+
+const PRESET_SMOOTHINGS = [
+  { label: 'Faithful', value: 1.5 },
+  { label: 'Smooth', value: 4.5 },
+  { label: 'Ultra Fairing', value: 8.0 },
 ];
 
 const QUICK_COLORS = [
@@ -77,7 +86,7 @@ export const Controls: React.FC<ControlsProps> = ({
           >
             <Feather className="w-4 h-4 mb-1" />
             <span>Same-Size Line</span>
-            <span className="text-[10px] font-normal opacity-80">Centerline / Sketches</span>
+            <span className="text-[10px] font-normal opacity-80">Sketches & Outlines</span>
           </button>
 
           <button
@@ -90,26 +99,126 @@ export const Controls: React.FC<ControlsProps> = ({
           >
             <Layers className="w-4 h-4 mb-1" />
             <span>Filled Contours</span>
-            <span className="text-[10px] font-normal opacity-80">Outline / Solid Logo</span>
+            <span className="text-[10px] font-normal opacity-80">Solid Shapes / Logos</span>
           </button>
         </div>
-
-        {mode === 'centerline' && (
-          <div className="mt-2.5 p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-300 flex items-start gap-2">
-            <Sparkles className="w-4 h-4 flex-shrink-0 text-indigo-400 mt-0.5" />
-            <span>
-              <strong>Same-Size Line Active:</strong> Thins hand-drawn strokes down to a 1px skeleton and applies uniform stroke width across every line.
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Main Settings Panel */}
-      <div className="p-4 space-y-6 flex-1">
+      <div className="p-4 space-y-5 flex-1">
         {mode === 'centerline' ? (
           <>
-            {/* 1. Line Thickness / Stroke Width */}
-            <div className="space-y-2.5">
+            {/* 1. Connect Gaps & Auto-Close Loops */}
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded bg-indigo-500/20 text-indigo-400">
+                    <Link className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block">
+                      Connect & Close Broken Lines
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Bridges pen gaps & forms continuous loops
+                    </span>
+                  </div>
+                </div>
+                <button
+                  onClick={() =>
+                    onCenterlineOptionsChange({ connectGaps: !centerlineOptions.connectGaps })
+                  }
+                  className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
+                    centerlineOptions.connectGaps ? 'bg-indigo-600' : 'bg-slate-800'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      centerlineOptions.connectGaps ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {centerlineOptions.connectGaps && (
+                <div className="space-y-1.5 pt-2 border-t border-slate-850">
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span className="text-[11px] text-slate-400">Max Gap Bridge Distance</span>
+                    <span className="font-mono text-indigo-400 font-semibold">
+                      {centerlineOptions.gapMaxDistance} px
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="5"
+                    max="60"
+                    step="1"
+                    value={centerlineOptions.gapMaxDistance}
+                    onChange={(e) =>
+                      onCenterlineOptionsChange({ gapMaxDistance: parseInt(e.target.value) })
+                    }
+                    className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 2. Human Error Removal & Smoothing */}
+            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded bg-indigo-500/20 text-indigo-400">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-white block">
+                      Smooth Human Errors Completely
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Removes wiggles & rounds into perfect curve
+                    </span>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-indigo-400 border border-slate-700">
+                  Level {centerlineOptions.humanErrorSmoothing.toFixed(1)}
+                </span>
+              </div>
+
+              <input
+                type="range"
+                min="0.0"
+                max="10.0"
+                step="0.5"
+                value={centerlineOptions.humanErrorSmoothing}
+                onChange={(e) =>
+                  onCenterlineOptionsChange({
+                    humanErrorSmoothing: parseFloat(e.target.value),
+                  })
+                }
+                className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+              />
+
+              <div className="flex gap-1.5 pt-1">
+                {PRESET_SMOOTHINGS.map((p) => (
+                  <button
+                    key={p.label}
+                    onClick={() =>
+                      onCenterlineOptionsChange({ humanErrorSmoothing: p.value })
+                    }
+                    className={`flex-1 py-1 text-[11px] rounded border transition-colors ${
+                      Math.abs(centerlineOptions.humanErrorSmoothing - p.value) < 0.3
+                        ? 'bg-indigo-600/30 border-indigo-500 text-indigo-300 font-semibold'
+                        : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 3. Line Thickness / Stroke Width */}
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                   <Minus className="w-3.5 h-3.5 text-indigo-400" />
@@ -123,7 +232,7 @@ export const Controls: React.FC<ControlsProps> = ({
               <input
                 type="range"
                 min="0.5"
-                max="20"
+                max="25"
                 step="0.5"
                 value={centerlineOptions.lineWidth}
                 onChange={(e) =>
@@ -132,7 +241,6 @@ export const Controls: React.FC<ControlsProps> = ({
                 className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
               />
 
-              {/* Quick Width Buttons */}
               <div className="flex gap-1.5 pt-1">
                 {PRESET_WIDTHS.map((p) => (
                   <button
@@ -150,91 +258,96 @@ export const Controls: React.FC<ControlsProps> = ({
               </div>
             </div>
 
-            {/* 2. Darkness / Luminance Threshold */}
-            <div className="space-y-2">
+            {/* 4. Lighting & Shadow Removal (Phone Photos) */}
+            <div className="space-y-2 pt-2 border-t border-slate-800">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Ink Darkness Threshold</span>
-                </label>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={onAutoThreshold}
-                    className="text-[10px] px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/80 hover:bg-indigo-900 transition-colors flex items-center gap-1"
-                    title="Calculate optimal Otsu threshold automatically"
-                  >
-                    <Zap className="w-2.5 h-2.5" />
-                    <span>Auto Detect</span>
-                  </button>
-                  <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                    {centerlineOptions.threshold}
+                <div className="flex items-center gap-1.5">
+                  <SunMedium className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-xs font-medium text-slate-300">
+                    Phone Photo Shadow Removal
                   </span>
                 </div>
+                <button
+                  onClick={() =>
+                    onCenterlineOptionsChange({
+                      adaptiveLighting: !centerlineOptions.adaptiveLighting,
+                    })
+                  }
+                  className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
+                    centerlineOptions.adaptiveLighting ? 'bg-indigo-600' : 'bg-slate-800'
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                      centerlineOptions.adaptiveLighting ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
 
-              <input
-                type="range"
-                min="10"
-                max="245"
-                step="1"
-                value={centerlineOptions.threshold}
-                onChange={(e) =>
-                  onCenterlineOptionsChange({
-                    threshold: parseInt(e.target.value),
-                    autoThreshold: false,
-                  })
-                }
-                className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500">
-                <span>Light lines only</span>
-                <span>All ink & textures</span>
-              </div>
+              {centerlineOptions.adaptiveLighting ? (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-slate-400">
+                    <span>Adaptive Sensitivity</span>
+                    <span className="font-mono text-indigo-300">
+                      {centerlineOptions.adaptiveSensitivity}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="5"
+                    max="45"
+                    step="1"
+                    value={centerlineOptions.adaptiveSensitivity}
+                    onChange={(e) =>
+                      onCenterlineOptionsChange({
+                        adaptiveSensitivity: parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-slate-400">
+                    <span>Global Threshold</span>
+                    <span className="font-mono text-indigo-300">
+                      {centerlineOptions.threshold}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="10"
+                    max="245"
+                    value={centerlineOptions.threshold}
+                    onChange={(e) =>
+                      onCenterlineOptionsChange({
+                        threshold: parseInt(e.target.value),
+                        autoThreshold: false,
+                      })
+                    }
+                    className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* 3. Smoothing / Curve Fitting */}
-            <div className="space-y-2">
+            {/* 5. Dust & Specks Filter */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-800">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
-                  <Paintbrush className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>Hand Jitter Smoothing</span>
+                  <Trash2 className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Remove Isolated Dust Specks</span>
                 </label>
                 <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  {centerlineOptions.smoothing.toFixed(1)}
+                  &lt; {centerlineOptions.minPathLength} px
                 </span>
               </div>
               <input
                 type="range"
-                min="0.2"
-                max="5.0"
-                step="0.2"
-                value={centerlineOptions.smoothing}
-                onChange={(e) =>
-                  onCenterlineOptionsChange({ smoothing: parseFloat(e.target.value) })
-                }
-                className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
-              />
-              <div className="flex justify-between text-[10px] text-slate-500">
-                <span>Preserve every sharp pixel</span>
-                <span>Ultra smooth curves</span>
-              </div>
-            </div>
-
-            {/* 4. Dust / Specks Filter */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">
-                  Filter Dust & Tiny Specks
-                </label>
-                <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  &gt; {centerlineOptions.minPathLength} px
-                </span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="25"
-                step="1"
+                min="2"
+                max="50"
+                step="2"
                 value={centerlineOptions.minPathLength}
                 onChange={(e) =>
                   onCenterlineOptionsChange({ minPathLength: parseInt(e.target.value) })
@@ -243,44 +356,7 @@ export const Controls: React.FC<ControlsProps> = ({
               />
             </div>
 
-            {/* 5. Stroke Caps & Joins */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Line Ends</label>
-                <select
-                  value={centerlineOptions.lineCap}
-                  onChange={(e) =>
-                    onCenterlineOptionsChange({
-                      lineCap: e.target.value as 'round' | 'square' | 'butt',
-                    })
-                  }
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none"
-                >
-                  <option value="round">Round (Natural)</option>
-                  <option value="square">Square</option>
-                  <option value="butt">Flat (Butt)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-slate-400 block mb-1">Line Joins</label>
-                <select
-                  value={centerlineOptions.lineJoin}
-                  onChange={(e) =>
-                    onCenterlineOptionsChange({
-                      lineJoin: e.target.value as 'round' | 'bevel' | 'miter',
-                    })
-                  }
-                  className="w-full bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg p-2 focus:ring-1 focus:ring-indigo-500 outline-none"
-                >
-                  <option value="round">Round</option>
-                  <option value="miter">Miter (Sharp)</option>
-                  <option value="bevel">Bevel</option>
-                </select>
-              </div>
-            </div>
-
-            {/* 6. Color Picker & Background */}
+            {/* 6. Color & Line Ends */}
             <div className="space-y-2 pt-2 border-t border-slate-800">
               <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                 <Palette className="w-3.5 h-3.5 text-indigo-400" />
@@ -311,34 +387,9 @@ export const Controls: React.FC<ControlsProps> = ({
                   type="color"
                   value={centerlineOptions.strokeColor}
                   onChange={(e) => onCenterlineOptionsChange({ strokeColor: e.target.value })}
-                  className="w-8 h-8 rounded-lg bg-transparent cursor-pointer border border-slate-700"
-                  title="Custom color"
+                  className="w-7 h-7 rounded-lg bg-transparent cursor-pointer border border-slate-700"
                 />
               </div>
-            </div>
-
-            {/* Invert Toggle */}
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-medium text-slate-300 block">Invert Colors</span>
-                <span className="text-[10px] text-slate-500">
-                  White strokes on dark paper
-                </span>
-              </div>
-              <button
-                onClick={() =>
-                  onCenterlineOptionsChange({ invert: !centerlineOptions.invert })
-                }
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                  centerlineOptions.invert ? 'bg-indigo-600' : 'bg-slate-800'
-                }`}
-              >
-                <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                    centerlineOptions.invert ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
             </div>
           </>
         ) : (
@@ -346,9 +397,7 @@ export const Controls: React.FC<ControlsProps> = ({
           <>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">
-                  Threshold (Black / White)
-                </label>
+                <label className="text-xs font-medium text-slate-300">Threshold</label>
                 <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                   {outlineOptions.threshold}
                 </span>
@@ -367,9 +416,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">
-                  Curve Smoothing
-                </label>
+                <label className="text-xs font-medium text-slate-300">Curve Smoothing</label>
                 <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                   {outlineOptions.smoothing.toFixed(1)}
                 </span>
@@ -386,51 +433,17 @@ export const Controls: React.FC<ControlsProps> = ({
                 className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
               />
             </div>
-
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              <label className="text-xs font-medium text-slate-300">Fill Color</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={outlineOptions.fillColor}
-                  onChange={(e) => onOutlineOptionsChange({ fillColor: e.target.value })}
-                  className="w-8 h-8 rounded-lg bg-transparent cursor-pointer border border-slate-700"
-                />
-                <span className="text-xs font-mono text-slate-400">
-                  {outlineOptions.fillColor}
-                </span>
-              </div>
-            </div>
-
-            {/* Invert */}
-            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="text-xs font-medium text-slate-300 block">Invert Foreground</span>
-              </div>
-              <button
-                onClick={() => onOutlineOptionsChange({ invert: !outlineOptions.invert })}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors ${
-                  outlineOptions.invert ? 'bg-indigo-600' : 'bg-slate-800'
-                }`}
-              >
-                <div
-                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                    outlineOptions.invert ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
           </>
         )}
       </div>
 
-      {/* Live Vector Stats footer */}
+      {/* Live Stats footer */}
       {traceResult && (
         <div className="p-3 bg-slate-950 border-t border-slate-800 text-xs space-y-1">
           <div className="flex justify-between text-slate-400">
             <span>Paths generated:</span>
             <span className="text-slate-200 font-mono font-medium">
-              {traceResult.pathsCount.toLocaleString()}
+              {traceResult.pathsCount.toLocaleString()} {traceResult.pathsCount === 1 && '(Continuous Loop)'}
             </span>
           </div>
           <div className="flex justify-between text-slate-400">
@@ -440,7 +453,7 @@ export const Controls: React.FC<ControlsProps> = ({
             </span>
           </div>
           <div className="flex justify-between text-slate-400">
-            <span>Canvas Size:</span>
+            <span>Dimensions:</span>
             <span className="text-slate-200 font-mono font-medium">
               {traceResult.width} × {traceResult.height} px
             </span>

@@ -1,16 +1,21 @@
 // src/utils/centerlineTracer.ts
 
 export interface CenterlineOptions {
-  threshold: number;         // 0 - 255 luminance threshold
-  autoThreshold?: boolean;   // Otsu's thresholding
-  invert: boolean;           // Invert ink/background
-  lineWidth: number;         // Uniform stroke width in px
-  strokeColor: string;       // e.g. "#1e293b" or "#000000"
-  fillBackground?: string;   // e.g. "none", "#ffffff"
+  threshold: number;             // 0 - 255 fallback global threshold
+  autoThreshold?: boolean;       // Otsu's thresholding
+  adaptiveLighting: boolean;     // Adaptive thresholding to remove phone shadows/gradients
+  adaptiveSensitivity: number;   // 5 - 40 margin below local mean
+  invert: boolean;               // Invert ink/background
+  lineWidth: number;             // Uniform stroke width in px
+  strokeColor: string;           // e.g. "#1e293b" or "#000000"
+  fillBackground?: string;       // e.g. "none", "#ffffff"
   lineCap: 'round' | 'square' | 'butt';
   lineJoin: 'round' | 'bevel' | 'miter';
-  smoothing: number;         // RDP epsilon (0.2 to 5.0)
-  minPathLength: number;     // Filter out specks/dust (e.g. 3 to 10 pixels)
+  connectGaps: boolean;          // Connect broken lines and snap close endpoints
+  gapMaxDistance: number;        // Max pixel gap to bridge (5 - 50 px)
+  autoCloseLoops: boolean;       // Snap start and end together into closed loops
+  humanErrorSmoothing: number;   // 0 (raw) to 10 (ultra-smooth organic curve)
+  minPathLength: number;         // Filter out tiny specks/dust marks (e.g. 5 to 30 px)
 }
 
 interface Point {
@@ -18,7 +23,12 @@ interface Point {
   y: number;
 }
 
-// Compute Otsu's threshold for automatic optimal thresholding of hand drawings
+interface PolylinePath {
+  points: Point[];
+  isClosed: boolean;
+}
+
+// Compute Otsu's threshold for automatic global thresholding
 export function computeOtsuThreshold(grayPixels: Uint8Array): number {
   const histogram = new Array(256).fill(0);
   const total = grayPixels.length;
@@ -54,6 +64,66 @@ export function computeOtsuThreshold(grayPixels: Uint8Array): number {
   }
 
   return threshold;
+}
+
+// Integral image-based fast local adaptive thresholding (removes lighting shadows from phone camera)
+function adaptiveThreshold(
+  gray: Uint8Array,
+  width: number,
+  height: number,
+  sensitivity: number,
+  invert: boolean
+): Uint8Array {
+  const total = width * height;
+  const binary = new Uint8Array(total);
+  const radius = Math.max(12, Math.round(Math.min(width, height) / 30));
+
+  // Build 2D Integral Image
+  const integral = new Float64Array((width + 1) * (height + 1));
+  const intW = width + 1;
+
+  for (let y = 0; y < height; y++) {
+    let rowSum = 0;
+    const yOffset = y * width;
+    const intYOffset = (y + 1) * intW;
+    const prevIntYOffset = y * intW;
+
+    for (let x = 0; x < width; x++) {
+      rowSum += gray[yOffset + x];
+      integral[intYOffset + (x + 1)] = integral[prevIntYOffset + (x + 1)] + rowSum;
+    }
+  }
+
+  // Calculate local window mean for each pixel
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - radius);
+    const y1 = Math.min(height - 1, y + radius);
+    const yOffset = y * width;
+
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - radius);
+      const x1 = Math.min(width - 1, x + radius);
+
+      const count = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const sum =
+        integral[(y1 + 1) * intW + (x1 + 1)] -
+        integral[y0 * intW + (x1 + 1)] -
+        integral[(y1 + 1) * intW + x0] +
+        integral[y0 * intW + x0];
+
+      const mean = sum / count;
+      const pixelVal = gray[yOffset + x];
+
+      // Pixel is ink if significantly darker than local surrounding paper
+      const isInk = invert
+        ? pixelVal > mean + sensitivity
+        : pixelVal < mean - sensitivity;
+
+      binary[yOffset + x] = isInk ? 1 : 0;
+    }
+  }
+
+  return binary;
 }
 
 // Zhang-Suen Thinning Algorithm
@@ -148,19 +218,98 @@ function zhangSuenThinning(grid: Uint8Array, width: number, height: number): Uin
   return result;
 }
 
+// Distance helper
+function ptDist(p1: Point, p2: Point): number {
+  return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+// Bridge and connect disjoint lines / close loops
+function connectAndBridgeLines(
+  polylines: Point[][],
+  maxGapDist: number,
+  autoClose: boolean
+): PolylinePath[] {
+  if (polylines.length === 0) return [];
+
+  let pool: PolylinePath[] = polylines.map((p) => ({ points: [...p], isClosed: false }));
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    // 1. Auto-close single loop if start & end are within gap distance
+    if (autoClose) {
+      for (let i = 0; i < pool.length; i++) {
+        const p = pool[i];
+        if (p.isClosed || p.points.length < 4) continue;
+
+        const start = p.points[0];
+        const end = p.points[p.points.length - 1];
+        if (ptDist(start, end) <= maxGapDist) {
+          p.isClosed = true;
+          changed = true;
+        }
+      }
+    }
+
+    // 2. Connect endpoints of separate disconnected segments
+    for (let i = 0; i < pool.length; i++) {
+      if (pool[i].isClosed) continue;
+      const pA = pool[i].points;
+      const startA = pA[0];
+      const endA = pA[pA.length - 1];
+
+      for (let j = i + 1; j < pool.length; j++) {
+        if (pool[j].isClosed) continue;
+        const pB = pool[j].points;
+        const startB = pB[0];
+        const endB = pB[pB.length - 1];
+
+        // EndA to StartB
+        if (ptDist(endA, startB) <= maxGapDist) {
+          pool[i].points = pA.concat(pB);
+          pool.splice(j, 1);
+          changed = true;
+          break;
+        }
+        // EndA to EndB (reverse B)
+        else if (ptDist(endA, endB) <= maxGapDist) {
+          pool[i].points = pA.concat(pB.slice().reverse());
+          pool.splice(j, 1);
+          changed = true;
+          break;
+        }
+        // StartA to EndB (prepend B)
+        else if (ptDist(startA, endB) <= maxGapDist) {
+          pool[i].points = pB.concat(pA);
+          pool.splice(j, 1);
+          changed = true;
+          break;
+        }
+        // StartA to StartB (reverse B and prepend)
+        else if (ptDist(startA, startB) <= maxGapDist) {
+          pool[i].points = pB.slice().reverse().concat(pA);
+          pool.splice(j, 1);
+          changed = true;
+          break;
+        }
+      }
+      if (changed) break;
+    }
+  }
+
+  return pool;
+}
+
 // Ramer-Douglas-Peucker line simplification
 function perpendicularDistance(p: Point, lineStart: Point, lineEnd: Point): number {
   const dx = lineEnd.x - lineStart.x;
   const dy = lineEnd.y - lineStart.y;
-  if (dx === 0 && dy === 0) {
-    return Math.hypot(p.x - lineStart.x, p.y - lineStart.y);
-  }
-  const num = Math.abs(dy * p.x - dx * p.y + lineEnd.x * lineStart.y - lineEnd.y * lineStart.x);
-  const den = Math.hypot(dx, dy);
-  return num / den;
+  if (dx === 0 && dy === 0) return Math.hypot(p.x - lineStart.x, p.y - lineStart.y);
+  return Math.abs(dy * p.x - dx * p.y + lineEnd.x * lineStart.y - lineEnd.y * lineStart.x) / (Math.hypot(dx, dy) || 1);
 }
 
-function simplifyPolyline(points: Point[], epsilon: number): Point[] {
+function rdpSimplify(points: Point[], epsilon: number): Point[] {
   if (points.length <= 2) return points;
   let maxDist = 0;
   let index = 0;
@@ -176,31 +325,116 @@ function simplifyPolyline(points: Point[], epsilon: number): Point[] {
   }
 
   if (maxDist > epsilon) {
-    const left = simplifyPolyline(points.slice(0, index + 1), epsilon);
-    const right = simplifyPolyline(points.slice(index), epsilon);
+    const left = rdpSimplify(points.slice(0, index + 1), epsilon);
+    const right = rdpSimplify(points.slice(index), epsilon);
     return left.slice(0, -1).concat(right);
   } else {
     return [start, end];
   }
 }
 
-// Convert points to smooth SVG path with quadratic Bezier midpoints
-function polylineToSmoothSvgPath(points: Point[]): string {
-  if (points.length === 0) return '';
-  if (points.length === 1) {
-    return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)} l 0.1 0.1`;
+// Comprehensive Human Error Removal & Smoothing (Laplacian Relaxation + Chaikin Corner Cutting)
+function smoothAndFairPath(points: Point[], isClosed: boolean, smoothLevel: number): Point[] {
+  if (points.length < 3) return points;
+  if (smoothLevel <= 0.1) return points;
+
+  let pts = points.map((p) => ({ ...p }));
+
+  // Stage 1: Laplacian relaxation (removes hand tremors, wiggles, and double-line hesitation marks)
+  const laplacianPasses = Math.min(20, Math.round(smoothLevel * 2.5));
+  const relaxFactor = Math.min(0.7, 0.25 + smoothLevel * 0.05);
+
+  for (let pass = 0; pass < laplacianPasses; pass++) {
+    const next: Point[] = [];
+    const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      if (!isClosed && (i === 0 || i === n - 1)) {
+        next.push(pts[i]);
+        continue;
+      }
+      const prev = isClosed ? pts[(i - 1 + n) % n] : pts[i - 1];
+      const succ = isClosed ? pts[(i + 1) % n] : pts[i + 1];
+
+      const avgX = (prev.x + succ.x) / 2;
+      const avgY = (prev.y + succ.y) / 2;
+
+      next.push({
+        x: pts[i].x * (1 - relaxFactor) + avgX * relaxFactor,
+        y: pts[i].y * (1 - relaxFactor) + avgY * relaxFactor,
+      });
+    }
+    pts = next;
   }
+
+  // Stage 2: Chaikin subdivision for organic curvature
+  const chaikinIters = smoothLevel >= 6 ? 2 : smoothLevel >= 2.5 ? 1 : 0;
+  for (let it = 0; it < chaikinIters; it++) {
+    const refined: Point[] = [];
+    const len = pts.length;
+    if (isClosed) {
+      for (let i = 0; i < len; i++) {
+        const p0 = pts[i];
+        const p1 = pts[(i + 1) % len];
+        refined.push({ x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y });
+        refined.push({ x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y });
+      }
+    } else {
+      refined.push(pts[0]);
+      for (let i = 0; i < len - 1; i++) {
+        const p0 = pts[i];
+        const p1 = pts[i + 1];
+        refined.push({ x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y });
+        refined.push({ x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y });
+      }
+      refined.push(pts[len - 1]);
+    }
+    pts = refined;
+  }
+
+  return pts;
+}
+
+// Catmull-Rom Cubic Bezier path generation
+function pathToSmoothSvg(points: Point[], isClosed: boolean): string {
+  if (points.length < 2) return '';
   if (points.length === 2) {
     return `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)} L ${points[1].x.toFixed(1)} ${points[1].y.toFixed(1)}`;
   }
 
+  const n = points.length;
   let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
-  for (let i = 1; i < points.length - 1; i++) {
-    const xc = ((points[i].x + points[i + 1].x) / 2).toFixed(1);
-    const yc = ((points[i].y + points[i + 1].y) / 2).toFixed(1);
-    d += ` Q ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}, ${xc} ${yc}`;
+
+  if (isClosed) {
+    for (let i = 0; i < n; i++) {
+      const p0 = points[(i - 1 + n) % n];
+      const p1 = points[i];
+      const p2 = points[(i + 1) % n];
+      const p3 = points[(i + 2) % n];
+
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
+    d += ' Z';
+  } else {
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = i > 0 ? points[i - 1] : points[i];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = i < n - 2 ? points[i + 2] : p2;
+
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
   }
-  d += ` L ${points[points.length - 1].x.toFixed(1)} ${points[points.length - 1].y.toFixed(1)}`;
+
   return d;
 }
 
@@ -213,7 +447,7 @@ export interface TraceResult {
   thresholdUsed: number;
 }
 
-// Convert image canvas to uniform line width SVG
+// Convert image canvas to uniform line width SVG with full gap connection & smoothing
 export function traceCenterlines(
   imageData: ImageData,
   options: CenterlineOptions
@@ -228,26 +462,29 @@ export function traceCenterlines(
     gray[i] = Math.round(0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]);
   }
 
-  // 2. Determine threshold
+  // 2. Thresholding (Adaptive illumination correction for phone photos vs. Global)
+  let binary: Uint8Array;
   let effectiveThreshold = options.threshold;
-  if (options.autoThreshold) {
-    effectiveThreshold = computeOtsuThreshold(gray);
+
+  if (options.adaptiveLighting) {
+    binary = adaptiveThreshold(gray, width, height, options.adaptiveSensitivity, options.invert);
+  } else {
+    if (options.autoThreshold) {
+      effectiveThreshold = computeOtsuThreshold(gray);
+    }
+    binary = new Uint8Array(totalPixels);
+    for (let i = 0; i < totalPixels; i++) {
+      const isInk = options.invert ? gray[i] > effectiveThreshold : gray[i] < effectiveThreshold;
+      binary[i] = isInk ? 1 : 0;
+    }
   }
 
-  // 3. Create binary grid
-  const binary = new Uint8Array(totalPixels);
-  for (let i = 0; i < totalPixels; i++) {
-    const isInk = options.invert ? gray[i] > effectiveThreshold : gray[i] < effectiveThreshold;
-    binary[i] = isInk ? 1 : 0;
-  }
-
-  // 4. Skeletonize
+  // 3. Skeletonize to 1-pixel spine
   const skeleton = zhangSuenThinning(binary, width, height);
 
-  // 5. Trace graph / polylines from skeleton
+  // 4. Trace graph / polylines from skeleton
   const visited = new Uint8Array(totalPixels);
-  const polylines: Point[][] = [];
-  let totalPoints = 0;
+  const rawPolylines: Point[][] = [];
 
   const getUnvisitedNeighbors = (x: number, y: number) => {
     const list: Point[] = [];
@@ -267,7 +504,6 @@ export function traceCenterlines(
     return list;
   };
 
-  // Traverse and extract continuous stroke lines
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
@@ -287,20 +523,45 @@ export function traceCenterlines(
         curr = next;
       }
 
-      // Filter out small artifacts/dust specks
+      // Filter out dust specks / scanner noise
       if (polyline.length >= options.minPathLength) {
-        const simplified = simplifyPolyline(polyline, options.smoothing);
-        polylines.push(simplified);
-        totalPoints += simplified.length;
+        rawPolylines.push(polyline);
       }
     }
   }
 
-  // 6. Build SVG with uniform stroke width
-  const pathElements = polylines
+  // 5. Connect broken lines & auto-close loops if enabled
+  let paths: PolylinePath[];
+  if (options.connectGaps) {
+    paths = connectAndBridgeLines(rawPolylines, options.gapMaxDistance, options.autoCloseLoops);
+  } else {
+    paths = rawPolylines.map((pts) => ({ points: pts, isClosed: false }));
+  }
+
+  // 6. Simplify & Apply Multi-stage Human Error Smoothing
+  const finalSvgPaths: string[] = [];
+  let totalPoints = 0;
+
+  for (let i = 0; i < paths.length; i++) {
+    const path = paths[i];
+    if (path.points.length < 2) continue;
+
+    // RDP simplification
+    const rdpEpsilon = 1.0 + options.humanErrorSmoothing * 0.4;
+    const simplified = rdpSimplify(path.points, rdpEpsilon);
+
+    // Human error removal & organic curvature fairing
+    const smoothed = smoothAndFairPath(simplified, path.isClosed, options.humanErrorSmoothing);
+
+    totalPoints += smoothed.length;
+    finalSvgPaths.push(pathToSmoothSvg(smoothed, path.isClosed));
+  }
+
+  // 7. Render SVG markup
+  const pathElements = finalSvgPaths
     .map(
-      (pts) =>
-        `  <path d="${polylineToSmoothSvgPath(pts)}" fill="none" stroke="${options.strokeColor}" stroke-width="${options.lineWidth}" stroke-linecap="${options.lineCap}" stroke-linejoin="${options.lineJoin}" />`
+      (d) =>
+        `  <path d="${d}" fill="none" stroke="${options.strokeColor}" stroke-width="${options.lineWidth}" stroke-linecap="${options.lineCap}" stroke-linejoin="${options.lineJoin}" />`
     )
     .join('\n');
 
@@ -313,7 +574,7 @@ export function traceCenterlines(
 
   return {
     svg,
-    pathsCount: polylines.length,
+    pathsCount: finalSvgPaths.length,
     pointsCount: totalPoints,
     width,
     height,
