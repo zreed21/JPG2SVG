@@ -73,7 +73,7 @@ export const Controls: React.FC<ControlsProps> = ({
       {/* Mode Switcher */}
       <div className="p-4 border-b border-slate-800">
         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">
-          Tracing Algorithm
+          Tracing Mode
         </label>
         <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800">
           <button
@@ -86,7 +86,7 @@ export const Controls: React.FC<ControlsProps> = ({
           >
             <Feather className="w-4 h-4 mb-1" />
             <span>Same-Size Line</span>
-            <span className="text-[10px] font-normal opacity-80">Sketches & Outlines</span>
+            <span className="text-[10px] font-normal opacity-80">Uniform Stroke Width</span>
           </button>
 
           <button
@@ -98,9 +98,21 @@ export const Controls: React.FC<ControlsProps> = ({
             }`}
           >
             <Layers className="w-4 h-4 mb-1" />
-            <span>Filled Contours</span>
-            <span className="text-[10px] font-normal opacity-80">Solid Shapes / Logos</span>
+            <span>Original Mode</span>
+            <span className="text-[10px] font-normal opacity-80">Filled Shapes / Outline</span>
           </button>
+        </div>
+
+        <div className="mt-2.5 p-2.5 rounded-lg bg-slate-800/60 border border-slate-700/60 text-[11px] text-slate-300">
+          {mode === 'centerline' ? (
+            <span>
+              ✏️ <strong>Same-Size Line:</strong> Thins lines to 1px centerlines and renders every part with the same exact stroke width (best for sketches & coloring pages).
+            </span>
+          ) : (
+            <span>
+              ⬛ <strong>Original Mode:</strong> Preserves thick-and-thin variations as solid filled SVG shapes (best for solid logos, filled artwork, and silhouettes).
+            </span>
+          )}
         </div>
       </div>
 
@@ -393,14 +405,25 @@ export const Controls: React.FC<ControlsProps> = ({
             </div>
           </>
         ) : (
-          /* Outline Mode Controls */
+          /* Original Outline Mode Controls */
           <>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">Threshold</label>
-                <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-                  {outlineOptions.threshold}
-                </span>
+                <label className="text-xs font-medium text-slate-300">
+                  Black / White Threshold
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={onAutoThreshold}
+                    className="text-[10px] px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/80 hover:bg-indigo-900 transition-colors flex items-center gap-1"
+                  >
+                    <Zap className="w-2.5 h-2.5" />
+                    <span>Auto</span>
+                  </button>
+                  <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                    {outlineOptions.threshold}
+                  </span>
+                </div>
               </div>
               <input
                 type="range"
@@ -416,7 +439,9 @@ export const Controls: React.FC<ControlsProps> = ({
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-slate-300">Curve Smoothing</label>
+                <label className="text-xs font-medium text-slate-300">
+                  Outline Curve Smoothing
+                </label>
                 <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
                   {outlineOptions.smoothing.toFixed(1)}
                 </span>
@@ -433,6 +458,40 @@ export const Controls: React.FC<ControlsProps> = ({
                 className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg appearance-none"
               />
             </div>
+
+            <div className="space-y-2 pt-2 border-t border-slate-800">
+              <label className="text-xs font-medium text-slate-300">Solid Fill Color</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="color"
+                  value={outlineOptions.fillColor}
+                  onChange={(e) => onOutlineOptionsChange({ fillColor: e.target.value })}
+                  className="w-8 h-8 rounded-lg bg-transparent cursor-pointer border border-slate-700"
+                />
+                <span className="text-xs font-mono text-slate-400">
+                  {outlineOptions.fillColor}
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-medium text-slate-300 block">Invert Colors</span>
+                <span className="text-[10px] text-slate-500">Invert background & foreground</span>
+              </div>
+              <button
+                onClick={() => onOutlineOptionsChange({ invert: !outlineOptions.invert })}
+                className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
+                  outlineOptions.invert ? 'bg-indigo-600' : 'bg-slate-800'
+                }`}
+              >
+                <div
+                  className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
+                    outlineOptions.invert ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -443,7 +502,7 @@ export const Controls: React.FC<ControlsProps> = ({
           <div className="flex justify-between text-slate-400">
             <span>Paths generated:</span>
             <span className="text-slate-200 font-mono font-medium">
-              {traceResult.pathsCount.toLocaleString()} {traceResult.pathsCount === 1 && '(Continuous Loop)'}
+              {traceResult.pathsCount.toLocaleString()} {traceResult.pathsCount === 1 && '(Single Path)'}
             </span>
           </div>
           <div className="flex justify-between text-slate-400">

@@ -25,12 +25,12 @@ export const Header: React.FC<HeaderProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h1 className="font-bold text-lg text-white tracking-tight">JPG2SVG Studio</h1>
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-              Same-Size Line Edition
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              Dual Engine: Original & Same-Size Line
             </span>
           </div>
           <p className="text-xs text-slate-400">
-            Precision Raster to Vector with Centerline Skeletonization & 3D Layer View
+            Switch between Original Filled Contours and Uniform Centerline Tracing
           </p>
         </div>
       </div>
